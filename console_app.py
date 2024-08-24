@@ -1,4 +1,4 @@
-from rag.generate_answer import ask
+from rag.generate_answer import get_answer
 
 while True:
     print("Type 'exit' to exit.")
@@ -6,8 +6,5 @@ while True:
     if question == "exit":
         print("Goodbye!")
         break
-    respone = ask(question)
-    print("chat_history::", respone["chat_history"])
-    print("answer::", respone["answer"])
-    print("context::", respone["context"])
-    print("`" * 80)
+    respone = get_answer(question)
+    print(respone)

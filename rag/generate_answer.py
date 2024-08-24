@@ -1,61 +1,76 @@
+from typing import List
+
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains import create_history_aware_retriever
-from langchain_core.prompts import MessagesPlaceholder
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from rag.rag_services import llm
-from rag.index_docs import retriever
-from langchain_core.messages import AIMessage, HumanMessage
+
+from rag.rag_services import embeddings, llm
+from rag.routing import get_datasource
 
 system_prompt = (
-    "Bạn là một trợ lý cho các nhiệm vụ trả lời câu hỏi. "
-    "Sử dụng các phần ngữ cảnh được lấy ra dưới đây để trả lời câu hỏi. "
-    "Nếu bạn không biết câu trả lời, hãy nói rằng bạn không biết. "
-    "Trả lời ngắn gọn trong ba câu và giữ cho câu trả lời súc tích."
-    "\n\n"
-    "{context}"
+    '''
+    Bạn là chuyên viên tư vấn bán hàng cho SuperMRO
+    Bạn có nhiệm vụ trả lời câu hỏi của khách hàng về sản phẩm và dịch vụ của công ty dựa trên ngữ cảnh và lịch sử 
+    trò chuyện được cung cấp bên dưới đây
+    
+    Ngữ cảnh:
+    {context}
+    
+    
+    Yêu cầu về câu trả lời:
+    - Trả lời theo định dạng markdown
+    - Nếu câu hỏi về so sánh các sản phẩm, hãy trình bày ở dạng bảng
+    - Nếu câu hỏi chung chung về 1 loại sản phẩm, hãy giới thiệu và đặt câu hỏi gợi mở để khách hàng có thể hiểu rõ hơn về sản phẩm
+    - Nếu bạn không biết câu trả lời, hãy nói rằng bạn không biết
+    - Chỉ sử dụng tiếng Việt
+    - Giới hạn số từ tối đa: 800 từ 
+    
+    
+    Lịch sử trò chuyện:
+    {chat_history}
+    '''
 )
 
-contextualize_q_system_prompt = (
-    "Dựa trên lịch sử trò chuyện và câu hỏi mới nhất của người dùng "
-    "có thể tham chiếu đến ngữ cảnh trong lịch sử trò chuyện, "
-    "hãy tạo ra một câu hỏi độc lập có thể hiểu được mà không cần đến lịch sử trò chuyện. "
-    "KHÔNG trả lời câu hỏi, chỉ cần điều chỉnh lại nếu cần thiết, nếu không thì giữ nguyên."
-)
 
-contextualize_q_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", contextualize_q_system_prompt),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-    ]
-)
-history_aware_retriever = create_history_aware_retriever(
-    llm, retriever, contextualize_q_prompt
-)
+def get_relevant_document(question: str, data_sources: List[str]) -> list[Document]:
+    res = []
+    for data_source in data_sources:
+        vector_db = Chroma(persist_directory=f'vectorstore/{data_source}', embedding_function=embeddings)
+        context = vector_db.similarity_search(question)
+        print("Number of context:", len(context))
+        # log context in to txt file
+        with open(f"rag_context_{data_source}.txt", "w", encoding="utf-8") as f:
+            for c in context:
+                s = str(c)
+                f.write(s + "\n")
+                f.write("=" * 50 + "\n")
+        res.extend(context)
+    return res
 
-qa_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system_prompt),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-    ]
-)
-
-question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
-
-rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
 chat_history = []
 
 
-def ask(question: str) -> str:
-    global chat_history
-    response = rag_chain.invoke({"input": question, "chat_history": chat_history})
-    chat_history.extend(
+def get_answer(question: str) -> str:
+    data_sources = get_datasource(question)
+    relevant_documents = get_relevant_document(question, data_sources)
+
+    prompt = ChatPromptTemplate.from_messages(
         [
-            HumanMessage(content=question),
-            AIMessage(content=response["answer"]),
+            ("system", system_prompt),
+            ("human", "{input}"),
         ]
     )
-    return response
+
+    chain = prompt | llm
+    res = chain.invoke({
+        "context": relevant_documents,
+        "input": question,
+        "chat_history": chat_history
+    })
+
+    chat_history.append([
+        ("human", question),
+        ("system", res.content)
+    ])
+    return res.content
