@@ -1,72 +1,175 @@
-import os
-import pandas as pd
-from bs4 import SoupStrainer
-from langchain_chroma import Chroma
-from langchain_community.document_loaders import WebBaseLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from rag.rag_services import embeddings
+def import_data_db():
+    import pandas as pd
+    from sqlalchemy import create_engine, Table, MetaData, Column, Integer, String, Float
+    from sqlalchemy.dialects.mysql import BIGINT, FLOAT, VARCHAR
 
-# Thiết lập text_splitter
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    # Đọc file CSV
+    file_path = 'mro_sanpham_full_202408170925.csv'  # Thay 'mro_sanpham_full_202408170925.csv' bằng đường dẫn thực tế đến file CSV của bạn
+    data = pd.read_csv(file_path)
 
-# Đường dẫn tới thư mục chứa các tệp CSV
-folder_path = 'products_added'
+    # Thông tin kết nối MySQL
+    user = 'root'
+    password = 'admin'
+    host = 'localhost'
+    port = '3306'
+    database = 'product_db'
 
+    # Chuỗi kết nối đến MySQL
+    connection_string = f'mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}'
 
-# Định nghĩa hàm add_urls_to_vectorstore
-def add_urls_to_vectorstore(urls: list, category_name) -> None:
-    loader = WebBaseLoader(
-        web_paths=urls,
-        bs_kwargs=dict(
-            parse_only=SoupStrainer(
-                class_=("product-summary", "product-content__technical", "product-content__detail")
-            )
-        )
+    # Tạo engine kết nối
+    engine = create_engine(connection_string)
+
+    # Tạo bảng với cấu trúc phù hợp từ dữ liệu CSV nếu chưa tồn tại
+    metadata = MetaData()
+
+    products_table = Table(
+        'products', metadata,
+        Column('id', BIGINT, primary_key=True),
+        Column('category_id', BIGINT),
+        Column('sku', VARCHAR(255)),
+        Column('name', VARCHAR(255)),
+        Column('slug', VARCHAR(255)),
+        Column('image', VARCHAR(255)),
+        Column('slide', VARCHAR(255)),
+        Column('price', FLOAT),
+        Column('price_old', FLOAT),
+        Column('detail', VARCHAR(255)),
+        Column('related_products', VARCHAR(255)),
+        Column('related_posts', VARCHAR(255)),
+        Column('bundled_products', VARCHAR(255)),
+        Column('brand_id', BIGINT),
+        Column('model_producer', VARCHAR(255)),
+        Column('page_catalog', VARCHAR(255)),
+        Column('product_group_id', BIGINT),
+        Column('ship_number', BIGINT),
+        Column('sell_number', BIGINT),
+        Column('ship_weight', VARCHAR(255)),
+        Column('origin', VARCHAR(255)),
+        Column('packing_number', BIGINT),
+        Column('instock', BIGINT),
+        Column('status', BIGINT),
+        Column('created_at', VARCHAR(255)),
+        Column('updated_at', VARCHAR(255)),
+        Column('keyword', VARCHAR(255)),
+        Column('description', VARCHAR(255)),
+        Column('order', BIGINT),
+        Column('unit', VARCHAR(255)),
+        Column('warranty', VARCHAR(255)),
+        Column('is_stop_sell', BIGINT),
+        Column('size', VARCHAR(255)),
+        Column('id_producer', VARCHAR(255)),
+        Column('percent_vat', BIGINT),
+        Column('price_vat', BIGINT),
+        Column('is_fast_shipping', BIGINT),
+        Column('related_accessories', VARCHAR(255))
     )
-    docs = loader.load()
-    splits = text_splitter.split_documents(docs)
-    print("Split documents::", len(splits))
-    for split in splits:
-        print(split)
 
-    vectorstore = Chroma(persist_directory="./rag/vectorstore/" + category_name, embedding_function=embeddings)
-    retriever = vectorstore.as_retriever()
-    vectorstore.add_documents(splits)
-    print("Added documents to vectorstore.")
+    # Tạo bảng trong MySQL
+    metadata.create_all(engine)
+
+    # Import dữ liệu vào bảng MySQL
+    table_name = 'products'
+
+    try:
+        data.to_sql(name=table_name, con=engine, if_exists='replace', index=False)
+        print("Dữ liệu đã được nhập thành công vào bảng MySQL.")
+    except Exception as e:
+        print(f"Có lỗi xảy ra: {e}")
 
 
-# Kiểm tra xem thư mục có tồn tại hay không
-if os.path.exists(folder_path):
-    # Lặp qua tất cả các tệp trong thư mục
-    for file_name in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, file_name)
+def get_cols_datatype():
+    import pandas as pd
 
-        # Kiểm tra nếu là tệp CSV
-        if os.path.isfile(file_path) and file_name.endswith('.csv'):
-            print(f"Processing file: {file_name}")
-            df = pd.read_csv(file_path)
+    # Đọc file CSV
+    file_path = 'mro_sanpham_full_202408170925.csv'  # Thay 'mro_sanpham_full_202408170925.csv' bằng đường dẫn thực tế đến file CSV của bạn
+    data = pd.read_csv(file_path)
+    print(data.dtypes)
 
-            # Tạo một danh sách để lưu các chỉ mục đã cập nhật status
-            updated_indices = []
 
-            # Lặp qua các URL theo nhóm 20
-            for start in range(0, len(df), 20):
-                end = min(start + 20, len(df))
-                urls = df['url'][start:end].tolist()
+def clean_data():
+    import pandas as pd
+    from sqlalchemy import create_engine
 
-                try:
-                    category_name = file_name.replace('.csv', '')
-                    add_urls_to_vectorstore(urls, category_name)
+    # Thông tin kết nối MySQL
+    user = 'root'
+    password = 'admin'
+    host = 'localhost'
+    port = '3306'
+    database = 'product_db'
 
-                    # Cập nhật cột status thành 1 cho các dòng đã xử lý
-                    df.loc[start:end - 1, 'status'] = 1
-                    updated_indices.extend(range(start, end))
+    # Chuỗi kết nối đến MySQL
+    connection_string = f'mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}'
 
-                except Exception as e:
-                    print(f"Error processing URLs from {file_name} [{start}:{end}]: {str(e)}")
+    # Tạo engine kết nối
+    engine = create_engine(connection_string)
 
-            # Ghi lại các thay đổi vào tệp CSV
-            df.to_csv(file_path, index=False)
-            print(f"Updated file: {file_name} with indices {updated_indices} set to status 1")
-else:
-    print(f'Thư mục "{folder_path}" không tồn tại.')
+    # Đọc dữ liệu từ bảng products
+    query = "SELECT * FROM products;"
+    df = pd.read_sql(query, con=engine)
+
+    # Hàm chuyển đổi thông tin sản phẩm thành đoạn văn
+    def generate_product_description(row):
+        name = row['name']
+        price = row['price']
+        price_old = row['price_old']
+        detail = row['detail']
+        origin = row['origin']
+        size = row['size']
+        warranty = row['warranty']
+        related_products = row['related_products']
+
+        # Tạo danh sách tên và liên kết sản phẩm liên quan
+        related_products_links = ""
+        if pd.notna(related_products):
+            try:
+                related_products_ids = [int(id.strip()) for id in str(related_products).split(',') if
+                                        id.strip().isdigit()]
+
+                for related_id in related_products_ids:
+                    related_product = df[df['id'] == related_id]
+                    if not related_product.empty:
+                        related_name = related_product.iloc[0]['name']
+                        related_slug = related_product.iloc[0]['slug']
+                        link = f"https://example.com/products/{related_slug}"
+                        related_products_links += f"{related_name}: {link}\n"
+            except (SyntaxError, TypeError) as e:
+                related_products_links += "No related products available.\n"
+
+        # Tạo đoạn văn mô tả sản phẩm
+        description = (
+            f"Product Name: {name}\n"
+            f"Price: {price} (Old Price: {price_old})\n"
+            f"Details: {detail}\n"
+            f"Origin: {origin}\n"
+            f"Size: {size}\n"
+            f"Warranty: {warranty}\n"
+            f"Related Products:\n{related_products_links}\n"
+        )
+        return description
+
+    # Tạo file văn bản
+    with open('products_descriptions.txt', 'w', encoding='utf-8') as file:
+        for index, row in df.iterrows():
+            description = generate_product_description(row)
+            file.write(description + "\n---\n")
+
+    print("Data has been successfully written to products_descriptions.txt")
+
+    # Gọi hàm để thực hiện công việc
+
+
+import tiktoken
+
+# Định nghĩa mã hóa cho mô hình GPT-4
+encoding = tiktoken.encoding_for_model("gpt-4o-mini")
+
+# Đọc nội dung file
+with open('products_descriptions.txt', 'r', encoding='utf-8') as file:
+    content = file.read()
+
+# Mã hóa nội dung và đếm token
+tokens = encoding.encode(content)
+num_tokens = len(tokens)
+
+print(f"Số lượng token trong file là: {num_tokens}")

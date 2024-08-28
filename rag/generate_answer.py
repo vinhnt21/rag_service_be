@@ -1,3 +1,4 @@
+
 from typing import List
 
 from langchain_chroma import Chroma
@@ -22,9 +23,7 @@ system_prompt = (
     - Nếu câu hỏi về so sánh các sản phẩm, hãy trình bày ở dạng bảng
     - Nếu câu hỏi chung chung về 1 loại sản phẩm, hãy giới thiệu và đặt câu hỏi gợi mở để khách hàng có thể hiểu rõ hơn về sản phẩm
     - Nếu bạn không biết câu trả lời, hãy nói rằng bạn không biết
-    - Chỉ sử dụng tiếng Việt
-    - Giới hạn số từ tối đa: 800 từ 
-    
+    - Chỉ sử dụng tiếng Việt và thông tin từ ngữ cảnh và lịch sử trò chuyện
     
     Lịch sử trò chuyện:
     {chat_history}
@@ -32,20 +31,24 @@ system_prompt = (
 )
 
 
-def get_relevant_document(question: str, data_sources: List[str]) -> list[Document]:
+def get_relevant_document(question: str, data_sources: List[str]) -> List[str]:
     res = []
+    source = []
     for data_source in data_sources:
-        vector_db = Chroma(persist_directory=f'vectorstore/{data_source}', embedding_function=embeddings)
+        vector_db = Chroma(persist_directory=f'./rag/vectorstore/{data_source}', embedding_function=embeddings)
         context = vector_db.similarity_search(question)
-        print("Number of context:", len(context))
-        # log context in to txt file
+        print(f'Number of context: {len(context)}')
+        # log context in to txt file with utf-8 encoding
         with open(f"rag_context_{data_source}.txt", "w", encoding="utf-8") as f:
             for c in context:
                 s = str(c)
                 f.write(s + "\n")
                 f.write("=" * 50 + "\n")
         res.extend(context)
-    return res
+        for c in context:
+            source.append(c.metadata["source"])
+
+    return res, source
 
 
 chat_history = []
@@ -53,7 +56,7 @@ chat_history = []
 
 def get_answer(question: str) -> str:
     data_sources = get_datasource(question)
-    relevant_documents = get_relevant_document(question, data_sources)
+    relevant_documents, source = get_relevant_document(question, data_sources)
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -73,4 +76,4 @@ def get_answer(question: str) -> str:
         ("human", question),
         ("system", res.content)
     ])
-    return res.content
+    return res.content, source

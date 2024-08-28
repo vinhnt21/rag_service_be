@@ -1,10 +1,13 @@
 from flask import Flask, request
 from flask_cors import CORS
 
-from rag.generate_answer import ask
+from rag.generate_answer import get_answer
+from dotenv import load_dotenv
+load_dotenv()
+
+
 
 app = Flask(__name__)
-
 CORS(app)
 
 
@@ -28,16 +31,12 @@ def route_ask():
     :return:
     """
     question = request.json.get('question')
-    try:
-        response = ask(question)
-    except Exception as e:
-        return {
-            "message": f"Error occurred: {e}"
-        }
-    return {
-        "message": response["answer"]
-    }
+    response, source = get_answer(question)
 
+    return {
+        "message": response,
+        "source": source
+    }
 
 if __name__ == '__main__':
     app.run()
